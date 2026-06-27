@@ -17,6 +17,7 @@ import {
   type LocalTime,
 } from "../runtime";
 import { aiRecognitionSettingsSchema } from "./ai-recognition";
+import { apiSuccessResponseSchema } from "./api";
 import { exchangeRateProviderSchema } from "./exchange-rates";
 
 const hhmmSchema = z.string().refine(isValidLocalTime, "时间格式必须为 HH:mm").transform((value) => value as LocalTime);
@@ -116,6 +117,10 @@ const appSettingsShape = {
   barkDeviceKey: z.string().trim().max(256),
   barkSilentPush: z.boolean(),
   serverchanSendKey: z.string().trim().max(256),
+  discordWebhookUrl: optionalHttpsUrlSchema,
+  discordBotUsername: z.string().trim().max(80),
+  discordBotAvatarUrl: optionalHttpsUrlSchema,
+  pushplusToken: z.string().trim().max(256),
   aiRecognition: aiRecognitionSettingsSchema,
 };
 
@@ -134,9 +139,10 @@ export type ApiBuiltInIconSourceSettingsPatch = BuiltInIconSourceSettingsPatch;
  */
 export const appSettingsSchema = z.object(appSettingsShape).strict();
 
-export const settingsResponseSchema = z.object({
+export const settingsPayloadSchema = z.object({
   settings: appSettingsSchema,
 }).strict();
+export const settingsResponseSchema = apiSuccessResponseSchema(settingsPayloadSchema);
 
 /**
  * 设置 PATCH 请求允许局部字段，但不允许未知字段。
@@ -148,3 +154,4 @@ export const settingsUpdateBodySchema = z.object({
   builtInIconSources: builtInIconSourcesPatchSchema,
 }).partial().strict();
 export type ApiAppSettings = z.infer<typeof appSettingsSchema>;
+export type SettingsResponse = z.infer<typeof settingsPayloadSchema>;

@@ -12,7 +12,9 @@ import {
 
 const PLAIN_TOKEN = "rlt_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO12";
 
-function subscription() {
+const success = <T>(data: T) => ({ ok: true, data });
+
+function subscription(overrides: Record<string, unknown> = {}) {
   return {
     id: "sub_public_api",
     name: "Public API Plan",
@@ -35,6 +37,7 @@ function subscription() {
     extra: { source: "test" },
     createdAt: "2026-06-20T00:00:00.000Z",
     updatedAt: "2026-06-20T00:00:00.000Z",
+    ...overrides,
   };
 }
 
@@ -59,13 +62,15 @@ describe("public API schemas", () => {
     expect(apiTokenSchema.parse(token)).toMatchObject({ scopes: ["read"] });
     expect(apiTokenSchema.safeParse({ ...token, plainToken: PLAIN_TOKEN }).success).toBe(false);
     expect(apiTokenSchema.safeParse({ ...token, revokedAt: "2026-06-20T00:00:00.000Z" }).success).toBe(false);
-    expect(apiTokensListResponseSchema.safeParse({ tokens: [{ ...token, plainToken: PLAIN_TOKEN }] }).success).toBe(false);
-    expect(apiTokenCreateResponseSchema.parse({ token, plainToken: PLAIN_TOKEN }).plainToken).toBe(PLAIN_TOKEN);
+    expect(apiTokensListResponseSchema.safeParse(success({ tokens: [{ ...token, plainToken: PLAIN_TOKEN }] })).success).toBe(false);
+    expect(apiTokensListResponseSchema.safeParse({ tokens: [] }).success).toBe(false);
+    expect(apiTokenCreateResponseSchema.parse(success({ token, plainToken: PLAIN_TOKEN })).data.plainToken).toBe(PLAIN_TOKEN);
   });
 
   it("parses public read responses for me, status and due items", () => {
-    expect(publicApiMeResponseSchema.parse({ ok: true, scopes: ["read"] })).toEqual({ ok: true, scopes: ["read"] });
-    expect(publicApiStatusResponseSchema.parse({
+    expect(publicApiMeResponseSchema.parse(success({ scopes: ["read"] })).data).toEqual({ scopes: ["read"] });
+    expect(publicApiMeResponseSchema.safeParse(success({ ok: true, scopes: ["read"] })).success).toBe(false);
+    expect(publicApiStatusResponseSchema.parse(success({
       generatedAt: "2026-06-20T00:00:00.000Z",
       total: 1,
       byStatus: {
@@ -75,15 +80,15 @@ describe("public API schemas", () => {
         paused: 0,
         cancelled: 0,
       },
-    }).total).toBe(1);
-    expect(publicApiDueResponseSchema.parse({
+    })).data.total).toBe(1);
+    expect(publicApiDueResponseSchema.parse(success({
       days: 30,
       generatedAt: "2026-06-20T00:00:00.000Z",
       items: [{
         dueDate: "2026-07-01",
         dueType: "renewal",
-        subscription: subscription(),
+        subscription: subscription({ startDate: null, autoCalculateNextBillingDate: false }),
       }],
-    }).items[0]?.subscription.id).toBe("sub_public_api");
+    })).data.items[0]?.subscription.startDate).toBeNull();
   });
 });

@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { COST_SHARING_SPLIT_MODES, costSharingCustomAmountsAreValid } from "../cost-sharing";
+import { apiSuccessResponseSchema } from "./api";
+import { okResponseSchema } from "./common";
 import {
   BILLING_CYCLES,
   CUSTOM_CYCLE_UNITS,
@@ -50,6 +52,7 @@ export const dateInputSchema = z
   .min(1)
   .refine(isValidDateOnly, "Invalid date")
   .describe("日期字符串：必须是 YYYY-MM-DD，不接受带时间或时区的 ISO datetime。");
+const nullableDateInputSchema = dateInputSchema.nullable();
 
 const optionalUrlSchema = z
   .string()
@@ -117,6 +120,16 @@ function oneTimeTermFieldsAreConsistent(value: {
   return hasCount === hasUnit;
 }
 
+function startDateRequirementIsSatisfied(value: {
+  billingCycle: BillingCycle;
+  startDate: string | null;
+  autoCalculateNextBillingDate: boolean;
+}): boolean {
+  // 周期订阅允许未知开始日期；one-time 和自动日期锚点仍需要真实 date-only。
+  if (value.billingCycle === "one-time") return value.startDate !== null;
+  return !value.autoCalculateNextBillingDate || value.startDate !== null;
+}
+
 /**
  * 订阅写入请求的跨运行面事实来源。
  *
@@ -138,7 +151,7 @@ const subscriptionWriteBodyShape = {
   pinned: z.boolean().default(false),
   publicHidden: z.boolean().default(false),
   paymentMethod: z.string().trim().min(1).max(80).nullable().optional(),
-  startDate: dateInputSchema,
+  startDate: nullableDateInputSchema,
   nextBillingDate: dateInputSchema,
   // autoRenew 默认关闭；缺省数据不能被解释成用户同意后台自动推进下一期。
   autoRenew: z.boolean().default(false),
@@ -161,6 +174,10 @@ export const subscriptionCreateBodySchema = z.object(subscriptionWriteBodyShape)
   .refine(oneTimeTermFieldsAreConsistent, {
     path: ["oneTimeTermCount"],
     message: "Invalid one-time term",
+  })
+  .refine(startDateRequirementIsSatisfied, {
+    path: ["startDate"],
+    message: "Start date is required for one-time subscriptions and automatic billing date calculation",
   });
 
 export const subscriptionUpdateBodySchema = z.object(subscriptionWriteBodyShape)
@@ -201,7 +218,7 @@ export const apiSubscriptionSchema = z.object({
   pinned: z.boolean(),
   publicHidden: z.boolean(),
   paymentMethod: z.string().min(1).optional(),
-  startDate: z.string(),
+  startDate: nullableDateInputSchema,
   nextBillingDate: z.string(),
   autoRenew: z.boolean(),
   autoCalculateNextBillingDate: z.boolean(),
@@ -220,6 +237,9 @@ export const apiSubscriptionSchema = z.object({
 }).strict().refine(oneTimeTermFieldsAreConsistent, {
   path: ["oneTimeTermCount"],
   message: "Invalid one-time term",
+}).refine(startDateRequirementIsSatisfied, {
+  path: ["startDate"],
+  message: "Start date is required for one-time subscriptions and automatic billing date calculation",
 });
 
 export const subscriptionsListQuerySchema = z.object({
@@ -227,19 +247,22 @@ export const subscriptionsListQuerySchema = z.object({
   cursor: z.string().trim().min(1).max(512).optional(),
 }).strict();
 
-export const subscriptionsListResponseSchema = z.object({
+export const subscriptionsListPayloadSchema = z.object({
   subscriptions: z.array(apiSubscriptionSchema),
   nextCursor: z.string().nullable(),
   total: z.number().int().nonnegative().optional(),
 }).strict();
+export const subscriptionsListResponseSchema = apiSuccessResponseSchema(subscriptionsListPayloadSchema);
 
-export const subscriptionResponseSchema = z.object({
+export const subscriptionPayloadSchema = z.object({
   subscription: apiSubscriptionSchema,
 }).strict();
+export const subscriptionResponseSchema = apiSuccessResponseSchema(subscriptionPayloadSchema);
 
-export const subscriptionDeleteResponseSchema = z.object({
-  ok: z.literal(true),
-}).strict();
+export const subscriptionDeleteResponseSchema = okResponseSchema;
+
+export type SubscriptionsListResponse = z.infer<typeof subscriptionsListPayloadSchema>;
+export type SubscriptionResponse = z.infer<typeof subscriptionPayloadSchema>;
 
 export type ApiSubscription = z.infer<typeof apiSubscriptionSchema> & {
   billingCycle: BillingCycle;
